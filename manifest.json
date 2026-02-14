@@ -1,19 +1,17 @@
 {
   "manifest_version": 3,
   "name": "PostPolice",
-  "version": "1.0.0",
-  "description": "Detects and extracts tweet text from Twitter/X",
+  "version": "2.0.0",
+  "description": "Detects verifiable claims and factual statements on any webpage using local AI",
   "permissions": [],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": [
-        "https://x.com/*",
-        "https://twitter.com/*"
-      ],
+      "matches": ["<all_urls>"],
       "js": ["content.js"],
+      "css": ["styles.css"],
       "run_at": "document_idle"
     }
   ]

@@ -1,34 +1,138 @@
 // PostPolice Content Script
-// Extracts tweet text from Twitter/X and monitors for new tweets
+// Extracts verifiable content from any webpage using local AI
+// Logs summary to console
 
 (function () {
   "use strict";
 
-  // Selector for tweet text elements (Twitter's data-testid attribute)
-  const TWEET_TEXT_SELECTOR = '[data-testid="tweetText"]';
+  // ============================================
+  // CONFIGURATION
+  // ============================================
 
-  // Debounce delay in milliseconds (1 second)
-  const DEBOUNCE_DELAY = 1000;
+  // Selectors for content elements to extract text from
+  const CONTENT_SELECTORS = [
+    "p",
+    "span",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "li",
+    "td",
+    "th",
+    "blockquote",
+    "article",
+    "section",
+    '[data-testid="tweetText"]', // Twitter/X specific
+  ];
 
-  // Highlight color for detected tweets
-  const HIGHLIGHT_COLOR = "rgba(29, 155, 240, 0.1)"; // Twitter blue with transparency
-  const HIGHLIGHT_BORDER = "2px solid rgba(29, 155, 240, 0.5)";
+  // Selectors for elements to ignore
+  const IGNORE_SELECTORS = [
+    "script",
+    "style",
+    "noscript",
+    "nav",
+    "header",
+    "footer",
+    "aside",
+    "iframe",
+    "svg",
+    "canvas",
+    "video",
+    "audio",
+    ".nav",
+    ".navbar",
+    ".header",
+    ".footer",
+    ".sidebar",
+    ".menu",
+    ".ad",
+    ".advertisement",
+    '[role="navigation"]',
+    '[role="banner"]',
+    '[role="contentinfo"]',
+  ];
 
-  // Timer ID for debouncing
-  let debounceTimer = null;
+  // Minimum text length to consider for analysis
+  const MIN_TEXT_LENGTH = 20;
 
-  // Track the last logged tweet count to avoid redundant logs
-  let lastLoggedCount = 0;
+  // Debounce delay for MutationObserver (ms)
+  const DEBOUNCE_DELAY = 2000;
 
-  // Set to track already highlighted elements
-  const highlightedElements = new WeakSet();
+  // ============================================
+  // STATE
+  // ============================================
 
-  // Track if AI is available
   let aiAvailable = false;
+  const processedNodes = new WeakSet();
+  let debounceTimer = null;
+  let isProcessing = false;
 
-  /**
-   * Checks if Chrome AI is available via background script.
-   */
+  // Store summaries for verification
+  const summaries = [];
+
+  // Expose summaries globally for external access
+  window.postPoliceSummaries = summaries;
+
+  // ============================================
+  // TEXT EXTRACTION
+  // ============================================
+
+  function shouldIgnoreElement(element) {
+    if (!element || !element.tagName) return true;
+
+    for (const selector of IGNORE_SELECTORS) {
+      try {
+        if (element.matches(selector)) return true;
+        if (element.closest(selector)) return true;
+      } catch (e) {}
+    }
+
+    const style = window.getComputedStyle(element);
+    if (style.display === "none" || style.visibility === "hidden") {
+      return true;
+    }
+
+    return false;
+  }
+
+  function getDirectTextContent(element) {
+    let text = "";
+    for (const node of element.childNodes) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        text += node.textContent;
+      }
+    }
+    if (!text.trim()) {
+      text = element.textContent || "";
+    }
+    return text;
+  }
+
+  function extractVisibleText() {
+    const results = [];
+    const selector = CONTENT_SELECTORS.join(", ");
+    const elements = document.querySelectorAll(selector);
+
+    elements.forEach((element) => {
+      if (processedNodes.has(element)) return;
+      if (shouldIgnoreElement(element)) return;
+
+      const text = getDirectTextContent(element).trim();
+      if (text.length < MIN_TEXT_LENGTH) return;
+
+      results.push({ element, text });
+    });
+
+    return results;
+  }
+
+  // ============================================
+  // LLM INTERACTION
+  // ============================================
+
   async function checkAI() {
     try {
       const response = await chrome.runtime.sendMessage({ type: "CHECK_AI" });
@@ -40,194 +144,152 @@
     }
   }
 
-  /**
-   * Analyzes tweets using Chrome's built-in AI via background script.
-   * @param {string[]} tweets - Array of tweet texts to analyze
-   */
-  async function analyzeTweetsWithAI(tweets) {
-    if (!aiAvailable || tweets.length === 0) return;
+  async function extractSummaryWithAI(content) {
+    if (!aiAvailable || !content) {
+      return "";
+    }
 
     try {
-      console.log("PostPolice: Sending tweets to AI for analysis...");
+      console.log(`PostPolice: Analyzing content (${content.length} chars)...`);
       const response = await chrome.runtime.sendMessage({
-        type: "ANALYZE_TWEETS",
-        tweets: tweets,
+        type: "EXTRACT_SUMMARY",
+        content: content,
       });
 
-      if (response?.analysis) {
-        console.log("=== PostPolice: AI Analysis ===");
-        console.log(response.analysis);
-      }
+      return response?.summary || "";
     } catch (error) {
-      console.log("PostPolice: AI analysis failed:", error.message);
+      console.log("PostPolice: Summary extraction failed:", error.message);
+      return "";
     }
   }
 
-  /**
-   * Checks if a tweet is an ad.
-   * @param {Element} element - The tweet text element
-   * @returns {boolean} True if the tweet is an ad
-   */
-  function isAdTweet(element) {
-    const tweetContainer = element.closest("article");
-    if (!tweetContainer) return false;
-    
-    // Check for "Ad" text in the tweet container
-    // Twitter ads typically have a span with "Ad" text
-    const adIndicators = tweetContainer.querySelectorAll('span');
-    for (const span of adIndicators) {
-      const text = span.textContent?.trim();
-      if (text === "Ad" || text === "Promoted") {
-        return true;
-      }
-    }
-    return false;
-  }
+  // ============================================
+  // MAIN PROCESSING
+  // ============================================
 
-  /**
-   * Applies highlight styling to a tweet element.
-   * @param {Element} element - The tweet text element to highlight
-   */
-  function highlightTweet(element) {
-    // Skip ads
-    if (isAdTweet(element)) {
-      return;
-    }
+  async function scanPage() {
+    if (isProcessing || !aiAvailable) return;
+    isProcessing = true;
 
-    // Find the parent tweet container (article element)
-    const tweetContainer = element.closest("article");
-    if (tweetContainer && !highlightedElements.has(tweetContainer)) {
-      tweetContainer.style.backgroundColor = HIGHLIGHT_COLOR;
-      tweetContainer.style.border = HIGHLIGHT_BORDER;
-      tweetContainer.style.borderRadius = "12px";
-      tweetContainer.style.transition = "background-color 0.3s ease";
-      highlightedElements.add(tweetContainer);
-    }
-  }
+    console.log("PostPolice: Scanning page for verifiable content...");
 
-  /**
-   * Extracts text content from all visible tweets on the page.
-   * @returns {string[]} Array of tweet text strings
-   */
-  function extractTweetTexts() {
-    const tweetElements = document.querySelectorAll(TWEET_TEXT_SELECTOR);
-    const tweetTexts = [];
+    try {
+      const elements = extractVisibleText();
+      console.log(`PostPolice: Found ${elements.length} text elements`);
 
-    tweetElements.forEach((element) => {
-      // Skip ads
-      if (isAdTweet(element)) {
+      if (elements.length === 0) {
+        isProcessing = false;
         return;
       }
 
-      // Get the text content, trimming whitespace
-      const text = element.textContent?.trim();
-      if (text) {
-        tweetTexts.push(text);
-        // Highlight the tweet
-        highlightTweet(element);
+      // Mark elements as processed
+      elements.forEach(({ element }) => processedNodes.add(element));
+
+      // Combine all text content
+      const fullContent = elements.map(({ text }) => text).join("\n\n");
+      console.log(`PostPolice: Combined content: ${fullContent.length} chars`);
+
+      // Extract summary using AI
+      const summary = await extractSummaryWithAI(fullContent);
+
+      if (summary) {
+        // Store summary in array for verification
+        summaries.push({
+          summary: summary,
+          timestamp: Date.now(),
+          url: window.location.href,
+        });
+
+        console.log("=== PostPolice: Verifiable Content Summary ===");
+        console.log(summary);
+        console.log("Stored in window.postPoliceSummaries array");
+        console.log("==============================================");
+      } else {
+        console.log("PostPolice: No verifiable content found");
       }
-    });
-
-    return tweetTexts;
-  }
-
-  /**
-   * Logs the current tweets to the console.
-   * Only logs if there's a change in tweet count.
-   */
-  async function logTweets() {
-    const tweets = extractTweetTexts();
-    const tweetCount = tweets.length;
-
-    // Only log if the count has changed (new tweets loaded)
-    if (tweetCount !== lastLoggedCount) {
-      console.log("=== PostPolice: Tweet Update ===");
-      console.log(`Total tweets visible: ${tweetCount}`);
-
-      if (tweets.length > 0) {
-        console.log("Newest tweet text:", tweets[0]);
-        console.log("All tweet texts:", tweets);
-
-        // Analyze with AI if available
-        await analyzeTweetsWithAI(tweets);
-      }
-
-      lastLoggedCount = tweetCount;
+    } catch (error) {
+      console.log("PostPolice: Error scanning page:", error.message);
     }
+
+    isProcessing = false;
   }
 
-  /**
-   * Debounced version of logTweets.
-   * Ensures logging happens at most once per DEBOUNCE_DELAY milliseconds.
-   */
-  function debouncedLogTweets() {
-    // Clear any existing timer
+  // ============================================
+  // MUTATION OBSERVER
+  // ============================================
+
+  function debouncedScan() {
     if (debounceTimer) {
       clearTimeout(debounceTimer);
     }
-
-    // Set a new timer
     debounceTimer = setTimeout(() => {
-      logTweets();
+      scanPage();
       debounceTimer = null;
     }, DEBOUNCE_DELAY);
   }
 
-  /**
-   * Sets up a MutationObserver to detect when new tweets are loaded.
-   */
   function setupMutationObserver() {
-    // Create observer that watches for DOM changes
     const observer = new MutationObserver((mutations) => {
-      // Check if any mutation might have added new tweets
-      let shouldCheck = false;
+      let hasNewContent = false;
 
       for (const mutation of mutations) {
-        // Check for added nodes that might contain tweets
         if (mutation.addedNodes.length > 0) {
-          shouldCheck = true;
-          break;
+          for (const node of mutation.addedNodes) {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              const element = node;
+              if (
+                CONTENT_SELECTORS.some((sel) => {
+                  try {
+                    return element.matches(sel) || element.querySelector(sel);
+                  } catch {
+                    return false;
+                  }
+                })
+              ) {
+                hasNewContent = true;
+                break;
+              }
+            }
+          }
         }
+        if (hasNewContent) break;
       }
 
-      // If potential new content was added, trigger debounced logging
-      if (shouldCheck) {
-        debouncedLogTweets();
+      if (hasNewContent) {
+        debouncedScan();
       }
     });
 
-    // Start observing the document body for changes
     observer.observe(document.body, {
-      childList: true, // Watch for added/removed child elements
-      subtree: true, // Watch the entire subtree
+      childList: true,
+      subtree: true,
     });
 
-    console.log("PostPolice: MutationObserver is now watching for new tweets");
-
+    console.log("PostPolice: MutationObserver active for dynamic content");
     return observer;
   }
 
-  /**
-   * Initialize the extension
-   */
-  async function init() {
-    console.log("PostPolice: Extension loaded on", window.location.href);
+  // ============================================
+  // INITIALIZATION
+  // ============================================
 
-    // Check if Chrome's built-in AI is available
+  async function init() {
+    console.log("PostPolice: Initializing on", window.location.href);
+
     await checkAI();
 
-    // Initial extraction and logging
-    await logTweets();
+    if (!aiAvailable) {
+      console.log("PostPolice: AI not available, extension disabled");
+      return;
+    }
 
-    // Set up observer for dynamic content
+    await scanPage();
     setupMutationObserver();
   }
 
-  // Run initialization when the DOM is ready
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
   } else {
-    // DOM is already ready
     init();
   }
 })();
