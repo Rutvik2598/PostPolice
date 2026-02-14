@@ -2,8 +2,11 @@
   "manifest_version": 3,
   "name": "PostPolice",
   "version": "2.0.0",
-  "description": "Detects verifiable claims and factual statements on any webpage using local AI",
+  "description": "Detects verifiable claims and factual statements on any webpage using Gemini AI",
   "permissions": [],
+  "host_permissions": [
+    "https://generativelanguage.googleapis.com/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },

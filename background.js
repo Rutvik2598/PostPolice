@@ -1,38 +1,11 @@
 // PostPolice Background Service Worker
-// Handles AI analysis using Chrome's built-in Prompt API
-// Detects verifiable claims and factual statements
+// Handles AI analysis using Gemini Flash 2.0 API
+// Extracts verifiable content summaries
 
-let aiSession = null;
+const GEMINI_API_KEY = "AIzaSyCz9jvbY2zqbW2SYq-Hb9iWs6zAnal1Lmw";
+const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`;
 
-/**
- * Initializes Chrome's built-in AI session.
- * @returns {Promise<boolean>} True if AI is available and initialized
- */
-async function initAI() {
-    try {
-        // Check if Chrome's built-in AI is available (use LanguageModel directly)
-        if (typeof LanguageModel === "undefined") {
-            console.log("PostPolice: Chrome AI not available in background");
-            return false;
-        }
-
-        // Check availability
-        const availability = await LanguageModel.availability();
-        console.log("PostPolice: AI availability:", availability);
-
-        if (availability === "unavailable") {
-            console.log("PostPolice: Chrome AI model not available on this device");
-            return false;
-        }
-
-        if (availability === "downloading") {
-            console.log("PostPolice: Chrome AI model is still downloading...");
-            return false;
-        }
-
-        // Create AI session with system prompt for extracting verifiable content
-        aiSession = await LanguageModel.create({
-            systemPrompt: `You are an AI assistant that reads text and extracts a **concise summary of verifiable content**.
+const SYSTEM_PROMPT = `You are an AI assistant that reads text and extracts a **concise summary of verifiable content**.
 
 Guidelines:
 1. Include only factual statements, news reports, or claims that can be verified later.
@@ -47,32 +20,14 @@ Example input:
 
 Example output:
 "- NASA launched a new satellite today.
-- Elon Musk tweeted about the launch."`,
-            expectedInputLanguages: ["en"],
-            expectedOutputLanguages: ["en"],
-        });
-
-        console.log("PostPolice: Chrome AI initialized successfully");
-        return true;
-    } catch (error) {
-        console.log("PostPolice: Failed to initialize Chrome AI:", error.message);
-        return false;
-    }
-}
+- Elon Musk tweeted about the launch."`;
 
 /**
- * Extracts verifiable content summary from text.
+ * Extracts verifiable content summary using Gemini API.
  * @param {string} content - Full text content to analyze
  * @returns {Promise<string>} Summary of verifiable content
  */
 async function extractSummary(content) {
-    if (!aiSession) {
-        const initialized = await initAI();
-        if (!initialized) {
-            return "";
-        }
-    }
-
     try {
         const prompt = `Extract a concise summary of verifiable content from the following text. Return only factual statements and news that can be verified.
 
@@ -81,9 +36,37 @@ ${content}
 
 Verifiable summary:`;
 
-        console.log("PostPolice: Extracting verifiable content...");
-        const response = await aiSession.prompt(prompt);
-        return response.trim();
+        console.log("PostPolice: Calling Gemini API...");
+        
+        const response = await fetch(GEMINI_API_URL, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                systemInstruction: {
+                    parts: [{ text: SYSTEM_PROMPT }]
+                },
+                contents: [{
+                    parts: [{ text: prompt }]
+                }],
+                generationConfig: {
+                    temperature: 0.3,
+                    maxOutputTokens: 1024,
+                }
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.text();
+            console.log("PostPolice: Gemini API error:", error);
+            return "";
+        }
+
+        const data = await response.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        console.log("PostPolice: Summary extracted successfully");
+        return text.trim();
     } catch (error) {
         console.log("PostPolice: Extraction failed:", error.message);
         return "";
@@ -100,16 +83,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     }
 
-    // Check AI availability
+    // Check AI availability (always available with API)
     if (message.type === "CHECK_AI") {
-        initAI().then((available) => {
-            sendResponse({ available });
-        });
+        sendResponse({ available: true });
         return true;
     }
 });
 
-// Initialize AI when extension loads
-initAI();
-
-console.log("PostPolice: Background service worker loaded");
+console.log("PostPolice: Background service worker loaded (Gemini Flash API)");
