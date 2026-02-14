@@ -1,12 +1,9 @@
 // PostPolice Background Service Worker
-// Handles AI analysis using Gemini Flash API
+// Handles AI analysis via local cache server (Groq key stored server-side)
 // Extracts verifiable content summaries and searches for verification
 
-importScripts("factChecker.js");
-
-  // const GEMINI_API_KEY = "AIzaSyCSfEBPGkFQN7XNewBhadTRqb8KLnSag7E";
-const GEMINI_API_KEY = "AIzaSyCz9jvbY2zqbW2SYq-Hb9iWs6zAnal1Lmw";
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
+// Cache bridge server URL
+const CACHE_SERVER_URL = "http://localhost:3000";
 
 // Whitelisted credible news sources
 const WHITELIST_DOMAINS = [
@@ -46,7 +43,7 @@ Guidelines:
 1. Include only factual statements, news reports, or claims that can be verified later.
 2. Ignore opinions, personal thoughts, jokes, speculation, or generic commentary.
 3. Focus on content that could appear in a news article or report.
-4. Summarize multiple statements into a short, coherent paragraph or bullet points.
+4. Return ONLY the top 5 most important verifiable bullet points. Never exceed 5 bullet points.
 5. Return only **verifiable information**, without interpretation or judgment about truth.
 6. Keep the summary concise and clear, suitable for feeding to a search API for verification.
 
@@ -58,61 +55,92 @@ Example output:
 - Elon Musk tweeted about the launch."`;
 
 /**
- * Extracts verifiable content summary using Gemini API.
+ * Checks the Valkey cache for a previously generated summary.
+ * @param {string} content - The content to look up
+ * @returns {Promise<string|null>} Cached summary or null
+ */
+async function checkSummaryCache(content) {
+    try {
+        const response = await fetch(`${CACHE_SERVER_URL}/check-summary`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content })
+        });
+        if (!response.ok) return null;
+        const data = await response.json();
+        if (data.hit) {
+            console.log("PostPolice: ✅ Cache HIT — skipping AI call");
+            return data.summary;
+        }
+        console.log("PostPolice: Cache MISS — will call Groq proxy");
+        return null;
+    } catch (err) {
+        console.log("PostPolice: Cache server unreachable, proceeding without cache:", err.message);
+        return null;
+    }
+}
+
+/**
+ * Stores a content→summary pair in Valkey cache.
+ * @param {string} content - The original content
+ * @param {string} summary - The generated summary
+ */
+async function storeSummaryInCache(content, summary) {
+    try {
+        await fetch(`${CACHE_SERVER_URL}/cache-summary`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content, summary })
+        });
+        console.log("PostPolice: 💾 Summary stored in cache");
+    } catch (err) {
+        console.log("PostPolice: Could not store in cache:", err.message);
+    }
+}
+
+/**
+ * Extracts verifiable content summary via server proxy to Groq, with Valkey caching.
  * @param {string} content - Full text content to analyze
  * @returns {Promise<string>} Summary of verifiable content
  */
 async function extractSummary(content) {
     try {
-        const prompt = `Extract a concise summary of verifiable content from the following text. Return only factual statements and news that can be verified.
+        // 1. Check cache first
+        const cachedSummary = await checkSummaryCache(content);
+        if (cachedSummary) {
+            return cachedSummary;
+        }
 
-Text:
-${content}
+        // 2. Cache miss — call server's /summarize proxy
+        const userPrompt = `Extract the top 5 most important verifiable facts from the following text. Return ONLY bullet points, maximum 5.\n\nText:\n${content}\n\nVerifiable summary (max 5 bullets):`;
 
-Verifiable summary:`;
-
-        console.log("PostPolice: Calling Gemini API...");
+        console.log("PostPolice: Calling Groq via server proxy...");
         console.log("PostPolice: Content length:", content.length);
-        
-        const requestBody = {
-            systemInstruction: {
-                parts: [{ text: SYSTEM_PROMPT }]
-            },
-            contents: [{
-                parts: [{ text: prompt }]
-            }],
-            generationConfig: {
-                temperature: 0.3,
-                maxOutputTokens: 1024,
-            }
-        };
-        
-        console.log("PostPolice: Request URL:", GEMINI_API_URL);
-        
-        const response = await fetch(GEMINI_API_URL, {
+
+        const response = await fetch(`${CACHE_SERVER_URL}/summarize`, {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify(requestBody)
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ systemPrompt: SYSTEM_PROMPT, userPrompt })
         });
 
         console.log("PostPolice: Response status:", response.status);
-        console.log("PostPolice: Response statusText:", response.statusText);
-
-        const responseText = await response.text();
-        console.log("PostPolice: Raw response:", responseText);
 
         if (!response.ok) {
-            console.error("PostPolice: Gemini API error:", response.status, responseText);
+            const errText = await response.text();
+            console.error("PostPolice: Summarize error:", response.status, errText);
             return "";
         }
 
-        const data = JSON.parse(responseText);
-        console.log("PostPolice: Parsed data:", JSON.stringify(data).substring(0, 500));
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-        console.log("PostPolice: Summary extracted successfully, length:", text.length);
-        return text.trim();
+        const data = await response.json();
+        const summary = (data.summary || "").trim();
+        console.log("PostPolice: Summary extracted successfully, length:", summary.length);
+
+        // 3. Store in cache for next time
+        if (summary) {
+            storeSummaryInCache(content, summary);
+        }
+
+        return summary;
     } catch (error) {
         console.error("PostPolice: Extraction failed:", error.message, error.stack);
         return "";
@@ -131,7 +159,7 @@ Verifiable summary:`;
 function isWhitelistedUrl(url) {
     try {
         const hostname = new URL(url).hostname.toLowerCase();
-        return WHITELIST_DOMAINS.some(domain => 
+        return WHITELIST_DOMAINS.some(domain =>
             hostname === domain || hostname.endsWith('.' + domain)
         );
     } catch {
@@ -149,21 +177,21 @@ async function searchDuckDuckGo(query, maxResults = 5) {
     try {
         // Truncate query to first 150 chars to leave room for site filters
         const truncatedQuery = query.substring(0, 150);
-        
+
         // Build site filter string for whitelisted domains
         const siteFilters = WHITELIST_DOMAINS.slice(0, 10) // Use top 10 to keep query reasonable
             .map(domain => `site:${domain}`)
             .join(" OR ");
-        
+
         // Combine query with site filters
         const fullQuery = `${truncatedQuery} (${siteFilters})`;
-        
+
         console.log("PostPolice: Searching DuckDuckGo for:", fullQuery);
-        
+
         // Use DuckDuckGo HTML endpoint
         const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(fullQuery)}`;
         console.log("PostPolice: Search URL:", searchUrl);
-        
+
         const response = await fetch(searchUrl, {
             method: "GET",
             headers: {
@@ -179,17 +207,17 @@ async function searchDuckDuckGo(query, maxResults = 5) {
         }
 
         const html = await response.text();
-        
+
         // Log full HTML response for debugging
         console.log("=== DUCKDUCKGO FULL HTML RESPONSE ===");
         console.log(html);
         console.log("=== END HTML RESPONSE ===");
-        
+
         // Parse search results from HTML
         const results = parseDuckDuckGoResults(html);
-        
+
         console.log(`PostPolice: Found ${results.length} results`);
-        
+
         return results.slice(0, maxResults);
     } catch (error) {
         console.log("PostPolice: Search error:", error.message);
@@ -204,21 +232,21 @@ async function searchDuckDuckGo(query, maxResults = 5) {
  */
 function parseDuckDuckGoResults(html) {
     const results = [];
-    
+
     console.log("PostPolice: HTML response length:", html.length);
     console.log("PostPolice: HTML sample:", html.substring(0, 500));
-    
+
     // Alternative: Parse using result blocks
     const resultBlocks = html.split(/class="result\s/);
     console.log("PostPolice: Found", resultBlocks.length - 1, "result blocks");
-    
+
     for (let i = 1; i < resultBlocks.length; i++) {
         const block = resultBlocks[i];
-        
+
         // Extract URL - look for the actual link, not DDG redirect
         const urlMatch = block.match(/href="\/\/duckduckgo\.com\/l\/\?uddg=([^&"]+)/);
         const directUrlMatch = block.match(/class="result__url"[^>]*href="([^"]*)"/);
-        
+
         let url = "";
         if (urlMatch) {
             url = decodeURIComponent(urlMatch[1]);
@@ -228,27 +256,27 @@ function parseDuckDuckGoResults(html) {
                 url = "https://" + url;
             }
         }
-        
+
         // Extract title
         const titleMatch = block.match(/class="result__a"[^>]*>([^<]+)</);
         const title = titleMatch ? titleMatch[1].trim() : "";
-        
+
         // Extract snippet
         const snippetMatch = block.match(/class="result__snippet"[^>]*>([^<]+)/);
         const snippet = snippetMatch ? snippetMatch[1].trim() : "";
-        
+
         console.log(`PostPolice: Result ${i}: URL="${url.substring(0, 50)}", title="${title.substring(0, 30)}"`);
-        
+
         if (url && title) {
             results.push({ url, title, snippet });
         }
     }
-    
+
     console.log("PostPolice: Total parsed results:", results.length);
     if (results.length > 0) {
         console.log("PostPolice: All URLs found:", results.map(r => r.url));
     }
-    
+
     return results;
 }
 
@@ -299,4 +327,4 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 });
 
-console.log("PostPolice: Background service worker loaded (Gemini Flash API)");
+console.log("PostPolice: Background service worker loaded (Valkey Cache + Groq Proxy)");
