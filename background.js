@@ -312,11 +312,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     }
 
-    // Fact-check: uses factChecker.js (fetch HTML from links + Gemini verdict)
+    // Verify a fact using Groq via server proxy
     if (message.type === "VERIFY_FACT") {
-        self.postPoliceFactChecker.verifyFact(message.statement, message.links || [])
-            .then((result) => sendResponse(result))
-            .catch((err) => sendResponse({ verdict: "UNCERTAIN", reasoning: err.message, raw: "", htmlSize: 0 }));
+        console.log("PostPolice: Verifying fact via proxy...");
+        fetch(`${CACHE_SERVER_URL}/verify-fact`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                claim: message.statement,
+                // Simple context for now: just join the links. 
+                // ideally we should fetch the content of these links first
+                context: "Links provided: " + (message.links || []).join(", ")
+            })
+        })
+            .then(res => res.json())
+            .then(data => sendResponse(data))
+            .catch(err => {
+                console.error("PostPolice: Verify failed", err);
+                sendResponse({ verdict: "UNCERTAIN", reasoning: "Verification server error" });
+            });
         return true;
     }
 
