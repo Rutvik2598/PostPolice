@@ -5,7 +5,8 @@
   "description": "Detects and verifies claims on any webpage using Gemini AI",
   "permissions": [],
   "host_permissions": [
-    "https://generativelanguage.googleapis.com/*",
+    "http://localhost:3000/*",
+    "https://api.groq.com/*",
     "https://html.duckduckgo.com/*",
     "https://*.reuters.com/*",
     "https://*.apnews.com/*",
@@ -28,9 +29,15 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "css": ["styles.css"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "styles.css"
+      ],
       "run_at": "document_idle"
     }
   ]
