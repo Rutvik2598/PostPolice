@@ -1,11 +1,27 @@
 {
   "manifest_version": 3,
   "name": "PostPolice",
-  "version": "2.0.0",
-  "description": "Detects verifiable claims and factual statements on any webpage using Gemini AI",
+  "version": "2.1.0",
+  "description": "Detects and verifies claims on any webpage using Gemini AI",
   "permissions": [],
   "host_permissions": [
-    "https://generativelanguage.googleapis.com/*"
+    "https://generativelanguage.googleapis.com/*",
+    "https://html.duckduckgo.com/*",
+    "https://*.reuters.com/*",
+    "https://*.apnews.com/*",
+    "https://*.bbc.com/*",
+    "https://*.bbc.co.uk/*",
+    "https://*.nytimes.com/*",
+    "https://*.theguardian.com/*",
+    "https://*.washingtonpost.com/*",
+    "https://*.npr.org/*",
+    "https://*.aljazeera.com/*",
+    "https://*.forbes.com/*",
+    "https://*.bloomberg.com/*",
+    "https://*.cnn.com/*",
+    "https://*.snopes.com/*",
+    "https://*.factcheck.org/*",
+    "https://*.politifact.com/*"
   ],
   "background": {
     "service_worker": "background.js"
