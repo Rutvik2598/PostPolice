@@ -71,7 +71,7 @@
   function isAdTweet(element) {
     const tweetContainer = element.closest("article");
     if (!tweetContainer) return false;
-    
+
     // Check for "Ad" text in the tweet container
     // Twitter ads typically have a span with "Ad" text
     const adIndicators = tweetContainer.querySelectorAll('span');
@@ -82,6 +82,111 @@
       }
     }
     return false;
+  }
+
+
+  /**
+   * Creates a verification button for a tweet.
+   * @param {string} tweetText - The text of the tweet
+   * @returns {Element} The button element
+   */
+  function createVerifyButton(tweetText) {
+    const button = document.createElement("button");
+    button.textContent = "Verify";
+    button.style.backgroundColor = "#1d9bf0";
+    button.style.color = "white";
+    button.style.border = "none";
+    button.style.borderRadius = "16px";
+    button.style.padding = "4px 12px";
+    button.style.fontSize = "12px";
+    button.style.cursor = "pointer";
+    button.style.marginLeft = "10px";
+    button.style.marginTop = "5px";
+    button.style.fontWeight = "bold";
+    button.style.zIndex = "1000";
+
+    button.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      button.disabled = true;
+      button.textContent = "Verifying...";
+
+      try {
+        const response = await chrome.runtime.sendMessage({
+          type: "VERIFY_TWEET",
+          tweetText: tweetText
+        });
+
+        showVerificationResults(button, response);
+      } catch (error) {
+        console.error("Verification failed:", error);
+        button.textContent = "Error";
+      } finally {
+        button.disabled = false;
+        if (button.textContent === "Verifying...") button.textContent = "Verify";
+      }
+    });
+
+    return button;
+  }
+
+  /**
+   * Displays verification results near the button.
+   * @param {Element} button - The verify button
+   * @param {object} data - Verification results
+   */
+  function showVerificationResults(button, data) {
+    // Remove existing results if any
+    const existing = button.nextElementSibling;
+    if (existing && existing.classList.contains("postpolice-results")) {
+      existing.remove();
+    }
+
+    const container = document.createElement("div");
+    container.className = "postpolice-results";
+    container.style.marginTop = "10px";
+    container.style.padding = "10px";
+    container.style.backgroundColor = "#f7f9f9";
+    container.style.borderRadius = "8px";
+    container.style.border = "1px solid #cfd9de";
+    container.style.fontSize = "13px";
+    container.style.color = "#0f1419";
+    container.style.maxWidth = "400px";
+
+    const queryDiv = document.createElement("div");
+    queryDiv.style.marginBottom = "8px";
+    queryDiv.innerHTML = `<strong>Search Query:</strong> <em>${data.query}</em>`;
+    container.appendChild(queryDiv);
+
+    if (data.results && data.results.length > 0) {
+      data.results.forEach(result => {
+        const item = document.createElement("div");
+        item.style.marginBottom = "8px";
+        item.style.paddingBottom = "8px";
+        item.style.borderBottom = "1px solid #eff3f4";
+
+        const relevanceColor = result.relevance > 70 ? "green" : (result.relevance > 40 ? "orange" : "red");
+
+        item.innerHTML = `
+          <div style="font-weight: bold; margin-bottom: 2px;">
+            <a href="${result.link}" target="_blank" style="text-decoration: none; color: #1d9bf0;">${result.title}</a>
+          </div>
+          <div style="font-size: 11px; color: #536471; margin-bottom: 4px;">${result.snippet}</div>
+          <div style="font-size: 11px; font-weight: bold; color: ${relevanceColor};">
+            Relevance: ${result.relevance}%
+          </div>
+        `;
+        container.appendChild(item);
+      });
+    } else {
+      const noResults = document.createElement("div");
+      noResults.textContent = "No relevant results found.";
+      container.appendChild(noResults);
+    }
+
+    // Insert after the button's container (usually the action bar or text)
+    // We'll insert it after the button for simplicity in this implementation
+    button.parentNode.insertBefore(container, button.nextSibling);
   }
 
   /**
@@ -101,6 +206,14 @@
       tweetContainer.style.border = HIGHLIGHT_BORDER;
       tweetContainer.style.borderRadius = "12px";
       tweetContainer.style.transition = "background-color 0.3s ease";
+
+      // Add Verify button
+      // We look for the tweet text to append the button after it, 
+      // or we can append it to the tweet container.
+      // Appending to the text element's parent ensures it flows with content.
+      const button = createVerifyButton(element.textContent.trim());
+      element.parentNode.appendChild(button);
+
       highlightedElements.add(tweetContainer);
     }
   }
@@ -145,9 +258,6 @@
       console.log(`Total tweets visible: ${tweetCount}`);
 
       if (tweets.length > 0) {
-        console.log("Newest tweet text:", tweets[0]);
-        console.log("All tweet texts:", tweets);
-
         // Analyze with AI if available
         await analyzeTweetsWithAI(tweets);
       }

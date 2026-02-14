@@ -4,6 +4,9 @@
   "version": "1.0.0",
   "description": "Detects and extracts tweet text from Twitter/X",
   "permissions": [],
+  "host_permissions": [
+    "https://customsearch.googleapis.com/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },
@@ -13,7 +16,9 @@
         "https://x.com/*",
         "https://twitter.com/*"
       ],
-      "js": ["content.js"],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ]
