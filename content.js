@@ -107,6 +107,26 @@
   }
 
   /**
+   * Fact-checks a claim using scraped links: fetches HTML from links and gets Gemini verdict.
+   * @param {string} statement - The claim to verify
+   * @param {string[]} links - URLs (e.g. from DuckDuckGo results)
+   * @returns {Promise<{verdict: string, reasoning: string, raw: string, htmlSize: number}>}
+   */
+  async function verifyClaimWithLinks(statement, links) {
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: "VERIFY_FACT",
+        statement: statement,
+        links: links,
+      });
+      return response || { verdict: "UNCERTAIN", reasoning: "No response", raw: "", htmlSize: 0 };
+    } catch (error) {
+      console.log("PostPolice: Fact check failed:", error.message);
+      return { verdict: "UNCERTAIN", reasoning: error.message, raw: "", htmlSize: 0 };
+    }
+  }
+
+  /**
    * Searches for verification sources for all stored summaries.
    * Call this from console: window.postPoliceVerify()
    */
@@ -285,7 +305,7 @@
 
         console.log(`\nPostPolice: Found ${claims.length} individual claims to verify`);
 
-        // Search for each claim separately
+        // Search for each claim separately, then fact-check using scraped links
         for (let i = 0; i < claims.length; i++) {
           const claim = claims[i];
           console.log(`\n--- Searching claim ${i + 1}/${claims.length}: "${claim.substring(0, 60)}..." ---`);
@@ -319,6 +339,20 @@
               console.log(`     URL: ${source.url}`);
             });
             console.log(`Links array: [${links.join(', ')}]`);
+
+            // Fact-check: fetch HTML from links and get Gemini verdict
+            console.log(`PostPolice: Fact-checking claim against ${links.length} link(s)...`);
+            const verdictResult = await verifyClaimWithLinks(claim, links);
+            claimLinkObj.verdict = verdictResult.verdict;
+            claimLinkObj.reasoning = verdictResult.reasoning;
+            claimLinkObj.raw = verdictResult.raw;
+            claimLinkObj.htmlSize = verdictResult.htmlSize;
+            verificationObj.verdict = verdictResult.verdict;
+            verificationObj.reasoning = verdictResult.reasoning;
+            verificationObj.raw = verdictResult.raw;
+            verificationObj.htmlSize = verdictResult.htmlSize;
+            console.log(`PostPolice: Verdict for claim: ${verdictResult.verdict}`);
+            console.log(`PostPolice: Reasoning: ${verdictResult.reasoning || '(none)'}`);
           } else {
             console.log("No sources found for this claim.");
           }
@@ -330,7 +364,10 @@
         }
         
         console.log("\n=== PostPolice: Verification Complete ===");
-        console.log("All claim links stored in window.postPoliceLinks");
+        console.log("All claim links and verdicts stored in window.postPoliceLinks and window.postPoliceVerifications");
+        claimLinks.forEach((item, idx) => {
+          console.log(`  Claim ${idx + 1}: ${item.verdict || "—"} | ${(item.claim || "").substring(0, 50)}...`);
+        });
         console.log(claimLinks);
       } else {
         console.log("PostPolice: No verifiable content found");

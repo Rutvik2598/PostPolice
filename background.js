@@ -2,6 +2,9 @@
 // Handles AI analysis using Gemini Flash API
 // Extracts verifiable content summaries and searches for verification
 
+importScripts("factChecker.js");
+
+  // const GEMINI_API_KEY = "AIzaSyCSfEBPGkFQN7XNewBhadTRqb8KLnSag7E";
 const GEMINI_API_KEY = "AIzaSyCz9jvbY2zqbW2SYq-Hb9iWs6zAnal1Lmw";
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
 
@@ -278,6 +281,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         searchForVerification(message.claim).then((result) => {
             sendResponse(result);
         });
+        return true;
+    }
+
+    // Fact-check: uses factChecker.js (fetch HTML from links + Gemini verdict)
+    if (message.type === "VERIFY_FACT") {
+        self.postPoliceFactChecker.verifyFact(message.statement, message.links || [])
+            .then((result) => sendResponse(result))
+            .catch((err) => sendResponse({ verdict: "UNCERTAIN", reasoning: err.message, raw: "", htmlSize: 0 }));
         return true;
     }
 
