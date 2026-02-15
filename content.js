@@ -132,21 +132,21 @@
    */
   async function verifyAllSummaries() {
     console.log("PostPolice: Starting verification for", summaries.length, "summaries...");
-    
+
     for (let i = 0; i < summaries.length; i++) {
       const summary = summaries[i];
       console.log(`\nPostPolice: Searching for summary ${i + 1}/${summaries.length}...`);
       console.log("Summary:", summary.summary.substring(0, 100) + "...");
-      
+
       const result = await searchForClaim(summary.summary);
-      
+
       verificationResults.push({
         summaryIndex: i,
         summary: summary.summary,
         sources: result.sources,
         searchedAt: result.searchedAt,
       });
-      
+
       if (result.sources.length > 0) {
         console.log(`Found ${result.sources.length} sources from credible news sites:`);
         result.sources.forEach((source, j) => {
@@ -158,7 +158,7 @@
         console.log("No sources found from whitelisted news sites.");
       }
     }
-    
+
     console.log("\n=== Verification Complete ===");
     console.log("Results stored in window.postPoliceVerifications");
     return verificationResults;
@@ -179,7 +179,7 @@
       try {
         if (element.matches(selector)) return true;
         if (element.closest(selector)) return true;
-      } catch (e) {}
+      } catch (e) { }
     }
 
     const style = window.getComputedStyle(element);
@@ -263,6 +263,11 @@
     if (isProcessing || !aiAvailable) return;
     isProcessing = true;
 
+    // Clear previous results to prevent accumulation across scans (MutationObserver)
+    summaries.length = 0;
+    verificationResults.length = 0;
+    claimLinks.length = 0;
+
     console.log("PostPolice: Scanning page for verifiable content...");
 
     try {
@@ -298,23 +303,25 @@
         console.log("==============================================");
 
         // Split summary into individual claims (by newlines or bullet points)
+        // STRICTLY LIMIT TO TOP 5 CLAIMS
         const claims = summary
           .split(/\n|(?=- )/)
           .map(line => line.replace(/^[-•*]\s*/, '').trim())
-          .filter(line => line.length > 10);
+          .filter(line => line.length > 10)
+          .slice(0, 5);
 
-        console.log(`\nPostPolice: Found ${claims.length} individual claims to verify`);
+        console.log(`\nPostPolice: Found ${claims.length} individual claims to verify (max 5 enforced)`);
 
         // Search for each claim separately, then fact-check using scraped links
         for (let i = 0; i < claims.length; i++) {
           const claim = claims[i];
           console.log(`\n--- Searching claim ${i + 1}/${claims.length}: "${claim.substring(0, 60)}..." ---`);
-          
+
           const searchResult = await searchForClaim(claim);
-          
+
           // Extract just the URLs from sources
           const links = searchResult.sources.map(source => source.url);
-          
+
           // Store claim with its links
           const claimLinkObj = {
             claim: claim,
@@ -323,7 +330,7 @@
             searchedAt: searchResult.searchedAt,
           };
           claimLinks.push(claimLinkObj);
-          
+
           const verificationObj = {
             summaryIndex: summaries.length - 1,
             claim: claim,
@@ -356,13 +363,13 @@
           } else {
             console.log("No sources found for this claim.");
           }
-          
+
           // Small delay between searches to avoid rate limiting
           if (i < claims.length - 1) {
             await new Promise(resolve => setTimeout(resolve, 500));
           }
         }
-        
+
         console.log("\n=== PostPolice: Verification Complete ===");
         console.log("All claim links and verdicts stored in window.postPoliceLinks and window.postPoliceVerifications");
         claimLinks.forEach((item, idx) => {
