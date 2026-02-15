@@ -39,11 +39,13 @@ const WHITELIST_DOMAINS = [
 
 const SYSTEM_PROMPT = `You are an AI assistant that reads text and extracts a **concise summary of verifiable content**.
 
+STRICT LIMIT: Return EXACTLY or FEWER than 5 bullet points. NEVER return more than 5.
+
 Guidelines:
 1. Include only factual statements, news reports, or claims that can be verified later.
 2. Ignore opinions, personal thoughts, jokes, speculation, or generic commentary.
 3. Focus on content that could appear in a news article or report.
-4. Return ONLY the top 5 most important verifiable bullet points. Never exceed 5 bullet points.
+4. Return ONLY the top 5 most important verifiable bullet points. NEVER EXCEED 5 BULLET POINTS.
 5. Return only **verifiable information**, without interpretation or judgment about truth.
 6. Keep the summary concise and clear, suitable for feeding to a search API for verification.
 
@@ -112,7 +114,7 @@ async function extractSummary(content) {
         }
 
         // 2. Cache miss — call server's /summarize proxy
-        const userPrompt = `Extract the top 5 most important verifiable facts from the following text. Return ONLY bullet points, maximum 5.\n\nText:\n${content}\n\nVerifiable summary (max 5 bullets):`;
+        const userPrompt = `Extract the top 5 most important verifiable facts from the following text. Return ONLY bullet points, maximum 5.\n\nText:\n${content}\n\nVerifiable summary (STRICTLY max 5 bullets):`;
 
         console.log("PostPolice: Calling Groq via server proxy...");
         console.log("PostPolice: Content length:", content.length);
@@ -132,10 +134,18 @@ async function extractSummary(content) {
         }
 
         const data = await response.json();
-        const summary = (data.summary || "").trim();
+        let summary = (data.summary || "").trim();
+
+        // 3. ENFORCE 5 BULLET POINT LIMIT (Fallback if AI misses instruction)
+        const bulletLines = summary.split(/\n/).filter(line => line.trim().startsWith("-") || line.trim().startsWith("•") || line.trim().startsWith("*"));
+        if (bulletLines.length > 5) {
+            console.log(`PostPolice: AI returned ${bulletLines.length} points, truncating to 5.`);
+            summary = bulletLines.slice(0, 5).join("\n");
+        }
+
         console.log("PostPolice: Summary extracted successfully, length:", summary.length);
 
-        // 3. Store in cache for next time
+        // 4. Store in cache for next time
         if (summary) {
             storeSummaryInCache(content, summary);
         }
