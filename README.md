@@ -52,8 +52,18 @@ The server will be running at `http://localhost:3000`.
 
 - **Real-time Summarization**: Automatically extracts verifiable claims from pages.
 - **Fact Verification**: Checks claims against whitelisted news sources using Groq LLM logic.
-- **High Performance Caching**: Uses Valkey to store summaries for 10 minutes, saving costs and latency.
+- **Semantic Verification Cache**: Skips redundant AI calls by matching claims semantically (>95% similarity) using local vectors.
+- **High Performance Caching**: Uses Valkey to store summaries and verification results for high efficiency.
 - **Secure Handling**: API keys are stored server-side and never exposed to the client.
+
+## Semantic Verification Cache (Local AI)
+
+PostPolice uses a dual-layer caching strategy to minimize AI costs and latency:
+
+1.  **Exact Matching**: Checked via SHA-256 hashes of the page content.
+2.  **Semantic Matching**: Uses the **HuggingFace Transformers.js** library on the server to generate 384-dimensional embeddings for every claim.
+    - Model: `Xenova/all-MiniLM-L6-v2` (Runs entirely locally).
+    - Logic: If a claim being verified is **95% semantically similar** to a previously verified claim, the server reuses the cached verdict instantly.
 
 ## Monitoring & Management
 
@@ -61,7 +71,7 @@ Visit the built-in dashboard to monitor cache performance:
 👉 **[http://localhost:3000/metrics](http://localhost:3000/metrics)**
 
 From the dashboard, you can:
-- View Hit/Miss rates and memory usage.
+- View Hit/Miss rates, **Semantic Hits**, and memory usage.
 - **Clear Cache**: Instantly purge all cached data.
 - **Reset Stats**: Zero out the performance counters.
 

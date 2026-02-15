@@ -5,6 +5,19 @@ const cors = require("cors");
 const crypto = require("crypto");
 const Valkey = require("iovalkey");
 
+// Model for local embeddings
+let extractor;
+(async () => {
+    try {
+        console.log("📥 Loading local embedding model (all-MiniLM-L6-v2)...");
+        const { pipeline } = await import("@xenova/transformers");
+        extractor = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2");
+        console.log("✅ Local embedding model ready");
+    } catch (err) {
+        console.error("❌ Failed to load embedding model:", err.message);
+    }
+})();
+
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 
@@ -14,6 +27,7 @@ app.use(express.json({ limit: "5mb" }));
 
 const PORT = 3000;
 const TTL_SECONDS = 600; // 10 minutes
+const SEMANTIC_THRESHOLD = 0.95; // 95% similarity for cache reuse
 
 // Connect to local Valkey instance
 const valkey = new Valkey({
@@ -32,15 +46,34 @@ valkey
     .catch((err) => console.error("❌ Valkey connection failed:", err.message));
 
 // ------------------------------------
-// Utility: hash content to a cache key
+// Utility Functions
 // ------------------------------------
 function hashContent(content) {
     return "summary:" + crypto.createHash("sha256").update(content).digest("hex");
 }
 
+function cosineSimilarity(vecA, vecB) {
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < vecA.length; i++) {
+        dotProduct += vecA[i] * vecB[i];
+        normA += vecA[i] * vecA[i];
+        normB += vecB[i] * vecB[i];
+    }
+    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+async function getEmbedding(text) {
+    if (!extractor) return null;
+    const output = await extractor(text, { pooling: "mean", normalize: true });
+    return Array.from(output.data);
+}
+
 // Metrics Counters
 let cacheHits = 0;
 let cacheMisses = 0;
+let semanticHits = 0;
 
 // ------------------------------------
 // POST /check-summary
@@ -150,6 +183,38 @@ app.post("/verify-fact", async (req, res) => {
         const { claim, context } = req.body;
         if (!claim || !context) return res.status(400).json({ error: "claim and context are required" });
 
+        // 1. Semantic cache check
+        console.log(`🧠 Checking semantic cache for claim: "${claim.substring(0, 50)}..."`);
+        const queryEmbedding = await getEmbedding(claim);
+
+        if (queryEmbedding) {
+            const allCachedVerdicts = await valkey.hgetall("semantic_verdicts");
+            let bestMatch = null;
+            let maxSimilarity = -1;
+
+            for (const [vectorStr, verdictJson] of Object.entries(allCachedVerdicts)) {
+                try {
+                    const vector = JSON.parse(vectorStr);
+                    const similarity = cosineSimilarity(queryEmbedding, vector);
+                    if (similarity > maxSimilarity) {
+                        maxSimilarity = similarity;
+                        bestMatch = JSON.parse(verdictJson);
+                    }
+                } catch (e) { }
+            }
+
+            if (maxSimilarity > -1) {
+                console.log(`🔍 Best semantic match similarity: ${maxSimilarity.toFixed(4)}`);
+            }
+
+            if (maxSimilarity >= SEMANTIC_THRESHOLD) {
+                console.log(`💎 SEMANTIC HIT (Sim: ${maxSimilarity.toFixed(4)}). Reusing cached verdict.`);
+                semanticHits++;
+                return res.json(bestMatch);
+            }
+        }
+
+        // 2. Cache miss — Call Groq
         console.log("🤖 Proxying to Groq API (Verify Fact)...");
 
         const systemPrompt = `You are a strict fact-checker. 
@@ -201,6 +266,12 @@ Verify the claim based ONLY on the evidence.`;
         let result = {};
         try {
             result = JSON.parse(content);
+
+            // 3. Cache the new verdict semantically
+            if (queryEmbedding && result.verdict) {
+                await valkey.hset("semantic_verdicts", JSON.stringify(queryEmbedding), JSON.stringify(result));
+                console.log("💾 Cached verification verdict semantically.");
+            }
         } catch (e) {
             result = { verdict: "UNCERTAIN", reasoning: "Failed to parse API response" };
         }
@@ -234,6 +305,7 @@ app.post("/clear-cache", async (req, res) => {
 app.post("/reset-stats", (req, res) => {
     cacheHits = 0;
     cacheMisses = 0;
+    semanticHits = 0;
     console.log("📊 Stats reset");
     res.json({ success: true, message: "Stats reset" });
 });
@@ -252,6 +324,7 @@ app.get("/metrics", async (req, res) => {
         const stats = {
             cacheHits,
             cacheMisses,
+            semanticHits,
             totalKeys: dbsize,
             usedMemory: usedMemory,
             uptime: process.uptime()
@@ -364,6 +437,10 @@ app.get("/metrics", async (req, res) => {
             <div class="card">
                 <div class="label">Total Keys</div>
                 <div class="value">${stats.totalKeys}</div>
+            </div>
+            <div class="card">
+                <div class="label">Semantic Hits</div>
+                <div class="value" style="color:var(--accent)">${stats.semanticHits}</div>
             </div>
             <div class="card">
                 <div class="label">Memory Used</div>
