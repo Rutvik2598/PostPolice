@@ -1,0 +1,104 @@
+
+> postpolice-cache-server@1.0.0 start
+> node index.js
+
+[dotenv@17.3.1] injecting env (1) from ../.env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+📥 Loading local embedding model (all-MiniLM-L6-v2)...
+🚀 PostPolice Cache Server running on http://localhost:3000
+✅ Connected to Valkey
+✅ Local embedding model ready
+🔴 Cache MISS for key summary:7d1a05772ed65fcadac572...
+🤖 Proxying to Groq API (Summarize)...
+✅ Groq returned summary, length: 744
+💾 Cached summary for key summary:7d1a05772ed65fcadac572... (TTL: 600s)
+🧠 Checking semantic cache for claim: "There is no information in the text that can be ve..."
+🔍 Best semantic match similarity: 0.2312
+🤖 Proxying to Groq API (Verify Fact)...
+✅ Groq returned verification: {
+  "verdict": "VERIFIED",
+   "reasoning": "The provided evidence consists of fact-checking articles
+💾 Cached verification verdict semantically.
+🧠 Checking semantic cache for claim: "A study claims that drinking 14 cups of espresso d..."
+🔍 Best semantic match similarity: 0.1595
+🤖 Proxying to Groq API (Verify Fact)...
+✅ Groq returned verification: {
+  "verdict": "FALSE",
+   "reasoning": "The provided evidence does not support the claim that drink
+💾 Cached verification verdict semantically.
+🧠 Checking semantic cache for claim: "The Eiffel Tower disappeared overnight, but there ..."
+🔍 Best semantic match similarity: 0.2974
+🤖 Proxying to Groq API (Verify Fact)...
+✅ Groq returned verification: {
+  "verdict": "FALSE",
+   "reasoning": "The evidence shows that the Eiffel Tower was closed due to 
+💾 Cached verification verdict semantically.
+🧠 Checking semantic cache for claim: "International leaders dropped a massive 10-mile wi..."
+🔍 Best semantic match similarity: 0.2576
+🤖 Proxying to Groq API (Verify Fact)...
+✅ Groq returned verification: {
+  "verdict": "FALSE",
+   "reasoning": "None of the provided links mention the dropping of a massiv
+💾 Cached verification verdict semantically.
+🧠 Checking semantic cache for claim: "The ice cube was reportedly manufactured in a secr..."
+🔍 Best semantic match similarity: 0.4435
+🤖 Proxying to Groq API (Verify Fact)...
+✅ Groq returned verification: {
+  "verdict": "FALSE",
+   "reasoning": "The provided links do not mention anything about an ice cub
+💾 Cached verification verdict semantically.
+🟢 Cache HIT for key summary:7d1a05772ed65fcadac572...
+🧠 Checking semantic cache for claim: "There is no information in the text that can be ve..."
+🔍 Best semantic match similarity: 1.0000
+💎 SEMANTIC HIT (Sim: 1.0000). Reusing cached verdict.
+🧠 Checking semantic cache for claim: "A study claims that drinking 14 cups of espresso d..."
+🔍 Best semantic match similarity: 1.0000
+💎 SEMANTIC HIT (Sim: 1.0000). Reusing cached verdict.
+🧠 Checking semantic cache for claim: "The Eiffel Tower disappeared overnight, but there ..."
+🔍 Best semantic match similarity: 1.0000
+💎 SEMANTIC HIT (Sim: 1.0000). Reusing cached verdict.
+🧠 Checking semantic cache for claim: "International leaders dropped a massive 10-mile wi..."
+🔍 Best semantic match similarity: 1.0000
+💎 SEMANTIC HIT (Sim: 1.0000). Reusing cached verdict.
+🧠 Checking semantic cache for claim: "The ice cube was reportedly manufactured in a secr..."
+🔍 Best semantic match similarity: 1.0000
+💎 SEMANTIC HIT (Sim: 1.0000). Reusing cached verdict.
+🧹 Cache cleared (FLUSHALL)
+📊 Stats reset
+🔴 Cache MISS for key summary:7d1a05772ed65fcadac572...
+🤖 Proxying to Groq API (Summarize)...
+✅ Groq returned summary, length: 555
+💾 Cached summary for key summary:7d1a05772ed65fcadac572... (TTL: 600s)
+🧠 Checking semantic cache for claim: "NASA scientists reportedly admitted to a surface t..."
+🤖 Proxying to Groq API (Verify Fact)...
+✅ Groq returned verification: {
+  "verdict": "UNCERTAIN",
+   "reasoning": "The provided links do not directly mention a surface te
+💾 Cached verification verdict semantically.
+🧠 Checking semantic cache for claim: "A 'Gourmet Mission' is planned by NASA for 2027 to..."
+🔍 Best semantic match similarity: 0.4668
+🤖 Proxying to Groq API (Verify Fact)...
+✅ Groq returned verification: {
+  "verdict": "UNCERTAIN",
+   "reasoning": "The provided links do not mention a 'Gourmet Mission' o
+💾 Cached verification verdict semantically.
+🧠 Checking semantic cache for claim: "A study from the Underground Institute of Bio-Hack..."
+🔍 Best semantic match similarity: 0.0101
+🤖 Proxying to Groq API (Verify Fact)...
+✅ Groq returned verification: {
+  "verdict": "FALSE",
+   "reasoning": "The provided evidence suggests a potential health benefit f
+💾 Cached verification verdict semantically.
+🧠 Checking semantic cache for claim: "The Eiffel Tower in Paris disappeared overnight, w..."
+🔍 Best semantic match similarity: 0.0814
+🤖 Proxying to Groq API (Verify Fact)...
+✅ Groq returned verification: {
+  "verdict": "FALSE",
+   "reasoning": "The provided evidence shows that the Eiffel Tower remains i
+💾 Cached verification verdict semantically.
+🧠 Checking semantic cache for claim: "International leaders successfully lowered the Ear..."
+🔍 Best semantic match similarity: 0.0897
+🤖 Proxying to Groq API (Verify Fact)...
+✅ Groq returned verification: {
+  "verdict": "FALSE",
+   "reasoning": "None of the provided evidence mentions the successful lower
+💾 Cached verification verdict semantically.

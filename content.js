@@ -169,6 +169,50 @@
   window.postPoliceSearch = searchForClaim;
 
   // ============================================
+  // UI HIGHLIGHTING
+  // ============================================
+
+  /**
+   * Highlights a claim on the page based on its verdict.
+   */
+  function highlightClaimOnPage(claim, verdict, reasoning, elements) {
+    if (verdict === "VERIFIED") return;
+
+    const className = verdict === "FALSE" ? "postpolice-false" : "postpolice-uncertain";
+    const label = verdict === "FALSE" ? "FALSE CLAIM" : "UNCERTAIN";
+
+    console.log(`PostPolice: Highlighting ${label}: "${claim.substring(0, 30)}..."`);
+
+    elements.forEach(({ element, text }) => {
+      if (element.dataset.postpoliceHighlighted) return;
+
+      const normalizedElementText = text.toLowerCase();
+      const normalizedClaim = claim.toLowerCase();
+
+      const claimWords = normalizedClaim.split(/\s+/).filter(w => w.length > 3);
+      const matchCount = claimWords.filter(w => normalizedElementText.includes(w)).length;
+      const matchRatio = matchCount / claimWords.length;
+
+      if (matchRatio > 0.4 || normalizedElementText.includes(normalizedClaim) || normalizedClaim.includes(normalizedElementText)) {
+        element.classList.add(className);
+        element.title = `${label}: ${reasoning}`;
+        element.dataset.postpoliceHighlighted = "true";
+
+        if (verdict === "FALSE" && !element.querySelector('.postpolice-badge')) {
+          const badge = document.createElement('span');
+          badge.className = 'postpolice-badge';
+          badge.textContent = ' 🚩 FALSE';
+          badge.style.fontSize = '0.7em';
+          badge.style.fontWeight = 'bold';
+          badge.style.color = '#ef4444';
+          badge.style.marginLeft = '5px';
+          element.appendChild(badge);
+        }
+      }
+    });
+  }
+
+  // ============================================
   // TEXT EXTRACTION
   // ============================================
 
@@ -360,6 +404,9 @@
             verificationObj.htmlSize = verdictResult.htmlSize;
             console.log(`PostPolice: Verdict for claim: ${verdictResult.verdict}`);
             console.log(`PostPolice: Reasoning: ${verdictResult.reasoning || '(none)'}`);
+
+            // Highlight the claim on the page
+            highlightClaimOnPage(claim, verdictResult.verdict, verdictResult.reasoning, elements);
           } else {
             console.log("No sources found for this claim.");
           }

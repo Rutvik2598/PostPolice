@@ -1,7 +1,7 @@
 {
     "name": "postpolice-cache-server",
     "version": "1.0.0",
-    "description": "Valkey cache bridge for PostPolice extension",
+    "description": "Semantic caching and Groq proxy for PostPolice",
     "main": "index.js",
     "scripts": {
         "start": "node index.js"
