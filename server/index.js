@@ -213,24 +213,198 @@ Verify the claim based ONLY on the evidence.`;
 });
 
 // ------------------------------------
+// POST /clear-cache
+// Calls valkey.flushall()
+// ------------------------------------
+app.post("/clear-cache", async (req, res) => {
+    try {
+        await valkey.flushall();
+        console.log("🧹 Cache cleared (FLUSHALL)");
+        res.json({ success: true, message: "Cache cleared" });
+    } catch (err) {
+        console.error("clear-cache error:", err.message);
+        res.status(500).json({ error: "failed to clear cache" });
+    }
+});
+
+// ------------------------------------
+// POST /reset-stats
+// Resets hit/miss counters
+// ------------------------------------
+app.post("/reset-stats", (req, res) => {
+    cacheHits = 0;
+    cacheMisses = 0;
+    console.log("📊 Stats reset");
+    res.json({ success: true, message: "Stats reset" });
+});
+
+// ------------------------------------
 // GET /metrics
-// Returns: { cacheHits, cacheMisses, cacheKeys, memoryUsage }
+// Returns: JSON or HTML Dashboard
 // ------------------------------------
 app.get("/metrics", async (req, res) => {
     try {
         const dbsize = await valkey.dbsize();
         const info = await valkey.info("memory");
-
-        // Parse used_memory_human from INFO output
         const memoryMatch = info.match(/used_memory_human:(.*)/);
         const usedMemory = memoryMatch ? memoryMatch[1].trim() : "unknown";
 
-        res.json({
+        const stats = {
             cacheHits,
             cacheMisses,
             totalKeys: dbsize,
-            usedMemory: usedMemory
-        });
+            usedMemory: usedMemory,
+            uptime: process.uptime()
+        };
+
+        // If requested from browser (Accept: text/html), serve a beautiful UI
+        if (req.headers.accept && req.headers.accept.includes("text/html")) {
+            const hitRate = stats.cacheHits + stats.cacheMisses > 0
+                ? ((stats.cacheHits / (stats.cacheHits + stats.cacheMisses)) * 100).toFixed(1)
+                : 0;
+
+            return res.send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PostPolice | Cache Metrics</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0a0c;
+            --card: #16161e;
+            --accent: #7c4dff;
+            --text: #ffffff;
+            --text-dim: #a0a0b0;
+            --success: #00e676;
+            --error: #ff5252;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            width: 100%;
+            max-width: 800px;
+            padding: 40px;
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+        }
+        h1 { font-weight: 800; margin: 0; letter-spacing: -1px; }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+        .card {
+            background: var(--card);
+            padding: 24px;
+            border-radius: 16px;
+            border: 1px solid rgba(255,255,255,0.05);
+            transition: transform 0.2s;
+        }
+        .card:hover { transform: translateY(-4px); }
+        .label { color: var(--text-dim); font-size: 13px; font-weight: 600; text-transform: uppercase; margin-bottom: 8px; }
+        .value { font-size: 32px; font-weight: 800; }
+        .value.hits { color: var(--success); }
+        .value.misses { color: var(--error); }
+        .actions {
+            display: flex;
+            gap: 16px;
+        }
+        button {
+            padding: 12px 24px;
+            border-radius: 12px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: rgba(255,255,255,0.05);
+            color: var(--text);
+        }
+        button:hover { background: rgba(255,255,255,0.1); }
+        button.primary { background: var(--accent); }
+        button.primary:hover { background: #6e40ff; padding: 12px 32px; }
+        .status { margin-top: 20px; font-size: 14px; color: var(--text-dim); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>PostPolice <span style="color:var(--accent)">Metrics</span></h1>
+            <div class="uptime">Uptime: ${Math.floor(stats.uptime / 60)}m</div>
+        </header>
+
+        <div class="grid">
+            <div class="card">
+                <div class="label">Cache Hits</div>
+                <div class="value hits">${stats.cacheHits}</div>
+            </div>
+            <div class="card">
+                <div class="label">Cache Misses</div>
+                <div class="value misses">${stats.cacheMisses}</div>
+            </div>
+            <div class="card">
+                <div class="label">Hit Rate</div>
+                <div class="value">${hitRate}%</div>
+            </div>
+            <div class="card">
+                <div class="label">Total Keys</div>
+                <div class="value">${stats.totalKeys}</div>
+            </div>
+            <div class="card">
+                <div class="label">Memory Used</div>
+                <div class="value">${stats.usedMemory}</div>
+            </div>
+        </div>
+
+        <div class="actions">
+            <button class="primary" onclick="doAction('/clear-cache')">Clear Cache</button>
+            <button onclick="doAction('/reset-stats')">Reset Stats</button>
+            <button onclick="location.reload()">Refresh Data</button>
+        </div>
+
+        <div class="status" id="status">Ready</div>
+    </div>
+
+    <script>
+        async function doAction(endpoint) {
+            const btn = event.target;
+            const originalText = btn.innerText;
+            btn.innerText = 'Processing...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch(endpoint, { method: 'POST' });
+                const data = await res.json();
+                document.getElementById('status').innerText = data.message || 'Action completed';
+                setTimeout(() => location.reload(), 1000);
+            } catch (err) {
+                document.getElementById('status').innerText = 'Error: ' + err.message;
+                btn.innerText = originalText;
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
+            `);
+        }
+
+        res.json(stats);
     } catch (err) {
         console.error("metrics error:", err.message);
         res.status(500).json({ error: "metrics failed" });
@@ -252,3 +426,4 @@ app.get("/health", async (req, res) => {
 app.listen(PORT, () => {
     console.log(`🚀 PostPolice Cache Server running on http://localhost:${PORT}`);
 });
+
