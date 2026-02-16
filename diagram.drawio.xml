@@ -1,0 +1,133 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="PostPolice Detailed Data Flow">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        
+        <!-- === LAYER 1: CLIENT (BROWSER) === -->
+        <mxCell id="group1" value="CLIENT SIDE (Brave/Chrome)" style="swimlane;whiteSpace=wrap;html=1;startSize=23;" vertex="1" parent="1">
+          <mxGeometry x="20" y="40" width="340" height="740" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="node_webpage" value="Target Webpage&#xa;(X/Twitter)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;" vertex="1" parent="group1">
+          <mxGeometry x="110" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="node_content" value="content.js&#xa;1. Extract Text&#xa;2. Receive Verdicts&#xa;3. Inject Highlights" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;" vertex="1" parent="group1">
+          <mxGeometry x="110" y="140" width="120" height="80" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="node_bg" value="background.js&#xa;(Orchestrator)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;" vertex="1" parent="group1">
+          <mxGeometry x="110" y="270" width="120" height="290" as="geometry" />
+        </mxCell>
+
+        <mxCell id="node_search" value="DuckDuckGo&#xa;Search" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;" vertex="1" parent="group1">
+          <mxGeometry x="110" y="660" width="120" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- === LAYER 2: LOCAL SERVER === -->
+        <mxCell id="group2" value="LOCAL CACHE SERVER (Node.js)" style="swimlane;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="40" width="400" height="740" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="node_express" value="Express API&#xa;(/summarize, /verify-fact)" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="group2">
+          <mxGeometry x="140" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="node_key_gen" value="Key Generation&#xa;SHA-256(Text)" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f5f5f5;" vertex="1" parent="group2">
+          <mxGeometry x="130" y="130" width="140" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="node_valkey_logic" value="Valkey Redis Lookup&#xa;Key: summary:{hash}&#xa;Key: verdict:{hash}" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;" vertex="1" parent="group2">
+          <mxGeometry x="130" y="260" width="140" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="node_semantic" value="Semantic Check&#xa;all-MiniLM-L6-v2&#xa;Similarity > 0.95" style="shape=parallelogram;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#e1d5e7;" vertex="1" parent="group2">
+          <mxGeometry x="130" y="380" width="140" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="node_llm_cycle" value="LLM Cycle&#xa;1. Build Prompt&#xa;2. HTTP POST to Groq&#xa;3. Regex JSON Parse" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;" vertex="1" parent="group2">
+          <mxGeometry x="130" y="520" width="140" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- === LAYER 3: CLOUD / DATA === -->
+        <mxCell id="group3" value="DATA &amp; CLOUD" style="swimlane;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="840" y="40" width="280" height="740" as="geometry" />
+        </mxCell>
+
+        <mxCell id="node_valkey_db" value="Valkey DB&#xa;{ key, value, vector }" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#e1d5e7;" vertex="1" parent="group3">
+          <mxGeometry x="90" y="260" width="100" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="node_groq" value="Groq Cloud&#xa;Llama-3.1-8b-instant" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffe6cc;" vertex="1" parent="group3">
+          <mxGeometry x="80" y="530" width="120" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- === CONNECTIONS === -->
+        
+        <!-- Web -> content -->
+        <mxCell id="edge1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="node_webpage" target="node_content">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <!-- content -> bg -->
+        <mxCell id="edge2" value="Request Summary" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="node_content" target="node_bg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- bg -> search -->
+        <mxCell id="edge3" value="Fetch Sources" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="node_bg" target="node_search">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- bg -> server -->
+        <mxCell id="edge4" value="POST /summarize /verify" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.25;entryX=0;entryY=0.5;" edge="1" parent="1" source="node_bg" target="node_express">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="360" y="400" as="sourcePoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- server -> keygen -->
+        <mxCell id="edge5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="node_express" target="node_key_gen">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- keygen -> valkey lookup -->
+        <mxCell id="edge6" value="Check Cache" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="node_key_gen" target="node_valkey_logic">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- valkey logic -> DB -->
+        <mxCell id="edge7" value="GET/SET" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="node_valkey_logic" target="node_valkey_db">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- valkey logic -> semantic (MISS) -->
+        <mxCell id="edge8" value="Cache MISS" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="node_valkey_logic" target="node_semantic">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- semantic -> llm cycle -->
+        <mxCell id="edge9" value="Semantic MISS" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="node_semantic" target="node_llm_cycle">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- llm cycle -> Groq -->
+        <mxCell id="edge10" value="API Call" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="node_llm_cycle" target="node_groq">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Results return path -->
+        <mxCell id="edge11" value="Return JSON" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0;exitY=0.5;entryX=1;entryY=0.75;" edge="1" parent="1" source="node_express" target="node_bg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="edge12" value="Visual Flags" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0;exitY=0.25;entryX=1;entryY=0.75;" edge="1" parent="1" source="node_bg" target="node_content">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
